@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "super-maior-world",
+      "runtimeExecutable": "E:\\Diego\\flutter\\bin\\cache\\dart-sdk\\bin\\dart.exe",
+      "runtimeArgs": [
+        "pub",
+        "global",
+        "run",
+        "dhttpd",
+        "--path",
+        "build/web",
+        "--port",
+        "8077"
+      ],
+      "port": 8077
+    }
+  ]
+}
