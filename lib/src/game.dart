@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'audio.dart';
 import 'model.dart';
 import 'render.dart';
 import 'sprites.dart';
@@ -68,6 +69,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   @override
   Future<void> onLoad() async {
     await sprites.load();
+    await GameAudio.load();
     _prefs = await SharedPreferences.getInstance();
     best = _prefs?.getInt('best') ?? 0;
     _reset();
@@ -111,10 +113,12 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
       case GState.title:
         _reset();
         state = GState.playing;
+        GameAudio.play(GameAudio.start);
       case GState.gameOver:
         if (stateT > 0.6) {
           _reset();
           state = GState.playing;
+          GameAudio.play(GameAudio.start);
         }
       default:
         break;
@@ -137,6 +141,11 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
         (event.logicalKey == LogicalKeyboardKey.space ||
             event.logicalKey == LogicalKeyboardKey.enter)) {
       onTapScreen();
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyM) {
+      GameAudio.toggleMute();
       return KeyEventResult.handled;
     }
     return KeyEventResult.handled;
@@ -239,6 +248,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     final seg = floor.segAt(local);
     if (seg == SegType.gap) {
       passStreak++;
+      if (passStreak == 3) GameAudio.play(GameAudio.fever);
       _passFloor(floor);
       return false;
     }
@@ -291,6 +301,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     lastBounceT = time;
     passStreak = 0;
     renderer.spawnDust(floor.y);
+    GameAudio.play(GameAudio.jump, volume: 0.6);
   }
 
   void _passFloor(Floor floor) {
@@ -304,6 +315,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     floor.broken = true;
     score += 300;
     shakeT = 0.32;
+    GameAudio.play(GameAudio.brick);
     renderer.spawnDebris(floor);
     for (final e in floor.enemies) {
       if (!e.dead) {
@@ -317,6 +329,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   void _stomp(Floor floor, Enemy e) {
     e.dead = true;
     score += 200;
+    GameAudio.play(GameAudio.stomp);
     renderer.spawnStompPoof(floor, e);
     renderer.spawnFloatText(floor.y - 60, '+200');
     _bounce(floor, boost: 1.12);
@@ -327,6 +340,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     if (superForm) {
       superForm = false;
       invulnT = 2.5;
+      GameAudio.play(GameAudio.hurt);
       _bounce(floor);
       return true;
     }
@@ -338,6 +352,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     state = GState.dying;
     stateT = 0;
     vy = -750;
+    GameAudio.play(GameAudio.death);
   }
 
   void _finishDeath() {
@@ -348,6 +363,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     }
     state = GState.gameOver;
     stateT = 0;
+    GameAudio.play(GameAudio.gameover);
   }
 
   void _collectItems() {
@@ -366,6 +382,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
           case ItemKind.coin:
             coins++;
             score += 100;
+            GameAudio.play(GameAudio.coin);
             renderer.spawnSparkle(itemY);
             renderer.spawnFloatText(itemY - 20, '+100');
           case ItemKind.mushroom:
@@ -376,9 +393,11 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
               superForm = true;
               renderer.spawnFloatText(itemY - 20, 'SUPER!');
             }
+            GameAudio.play(GameAudio.powerup);
             renderer.spawnSparkle(itemY);
           case ItemKind.star:
             starT = 8;
+            GameAudio.play(GameAudio.star);
             renderer.spawnFloatText(itemY - 20, 'ESTRELA!');
             renderer.spawnSparkle(itemY);
         }
