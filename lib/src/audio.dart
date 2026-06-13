@@ -30,6 +30,9 @@ class GameAudio {
   static Future<void> load() async {
     if (_ready) return;
     try {
+      // Flutter web production build serve assets em assets/assets/audio/
+      // (o dev server aceita ambos os caminhos; a produção só aceita este).
+      FlameAudio.audioCache.prefix = 'assets/assets/audio/';
       await FlameAudio.audioCache.loadAll(_all);
       _ready = true;
     } catch (_) {
