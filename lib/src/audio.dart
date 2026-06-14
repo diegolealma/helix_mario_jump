@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/foundation.dart';
 
 /// Camada fina sobre o flame_audio: pré-carrega e toca os efeitos do jogo.
 ///
 /// Os WAVs ficam em `assets/audio/` e são gerados por `tools/gen_audio.py`.
+/// O prefix padrão do flame_audio (`assets/audio/`) já é o correto: no web,
+/// o audioplayers monta a URL como `assets/<prefix><arquivo>`, resultando em
+/// `assets/assets/audio/<arquivo>`, que é onde o build de produção os serve.
 class GameAudio {
   GameAudio._();
 
   static bool muted = false;
-  static bool _ready = false;
 
   static const jump = 'jump.wav';
   static const coin = 'coin.wav';
@@ -26,27 +31,28 @@ class GameAudio {
     hurt, death, gameover, start, fever,
   ];
 
-  /// Pré-carrega todos os efeitos no cache (chame no onLoad).
+  /// Pré-carrega os efeitos (otimização). É best-effort: se o preload falhar,
+  /// o áudio NÃO é desabilitado — cada [play] recarrega sob demanda.
   static Future<void> load() async {
-    if (_ready) return;
     try {
-      // Flutter web production build serve assets em assets/assets/audio/
-      // (o dev server aceita ambos os caminhos; a produção só aceita este).
-      FlameAudio.audioCache.prefix = 'assets/assets/audio/';
       await FlameAudio.audioCache.loadAll(_all);
-      _ready = true;
-    } catch (_) {
-      // Sem áudio disponível (ex.: build sem assets) — o jogo segue mudo.
+    } catch (e, st) {
+      debugPrint('GameAudio: preload falhou (segue sob demanda): $e\n$st');
     }
   }
 
-  /// Toca um efeito. Ignora silenciosamente qualquer falha de áudio
-  /// (autoplay bloqueado, web sem gesto, etc.).
+  /// Toca um efeito (fire-and-forget). Falhas de áudio nunca quebram o jogo.
   static void play(String name, {double volume = 1.0}) {
-    if (muted || !_ready) return;
+    if (muted) return;
+    unawaited(_playSafe(name, volume));
+  }
+
+  static Future<void> _playSafe(String name, double volume) async {
     try {
-      FlameAudio.play(name, volume: volume);
-    } catch (_) {}
+      await FlameAudio.play(name, volume: volume);
+    } catch (e) {
+      debugPrint('GameAudio: falha ao tocar $name: $e');
+    }
   }
 
   static void toggleMute() => muted = !muted;
