@@ -3,12 +3,17 @@ import 'dart:async';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/foundation.dart';
 
-/// Camada fina sobre o flame_audio: pré-carrega e toca os efeitos do jogo.
+/// Camada de áudio do jogo, baseada em [AudioPool].
 ///
-/// Os WAVs ficam em `assets/audio/` e são gerados por `tools/gen_audio.py`.
-/// O prefix padrão do flame_audio (`assets/audio/`) já é o correto: no web,
-/// o audioplayers monta a URL como `assets/<prefix><arquivo>`, resultando em
-/// `assets/assets/audio/<arquivo>`, que é onde o build de produção os serve.
+/// Por que pools? `FlameAudio.play` cria um `AudioPlayer` (e, no web, um
+/// `AudioContext`) NOVO a cada chamada e não o fecha — eles acumulam, batem no
+/// limite do navegador e geram atraso crescente, pior ainda com sons em rajada.
+/// Um [AudioPool] mantém um punhado de players pré-carregados e reutilizáveis:
+/// tocar é só "resume" (latência mínima) e o player volta para o pool depois,
+/// então o número de contextos fica fixo.
+///
+/// Os WAVs ficam em `assets/audio/` (prefix padrão do flame_audio). No web a URL
+/// final vira `assets/assets/audio/<arquivo>`, que é onde a produção os serve.
 class GameAudio {
   GameAudio._();
 
@@ -26,30 +31,52 @@ class GameAudio {
   static const start = 'start.wav';
   static const fever = 'fever.wav';
 
-  static const _all = <String>[
-    jump, coin, stomp, brick, powerup, star,
-    hurt, death, gameover, start, fever,
-  ];
+  /// Quantos players simultâneos cada som pode ter. Sons que disparam em
+  /// rajada (pulo, moeda) precisam de mais; sons únicos bastam com 1.
+  static const _maxPlayers = <String, int>{
+    jump: 4,
+    coin: 3,
+    stomp: 2,
+    brick: 2,
+    fever: 2,
+    hurt: 2,
+    powerup: 1,
+    star: 1,
+    death: 1,
+    gameover: 1,
+    start: 1,
+  };
 
-  /// Pré-carrega os efeitos (otimização). É best-effort: se o preload falhar,
-  /// o áudio NÃO é desabilitado — cada [play] recarrega sob demanda.
+  static final Map<String, AudioPool> _pools = {};
+
+  /// Cria os pools (pré-carrega 1 player por som). Best-effort: falha em um som
+  /// não impede os outros.
   static Future<void> load() async {
-    try {
-      await FlameAudio.audioCache.loadAll(_all);
-    } catch (e, st) {
-      debugPrint('GameAudio: preload falhou (segue sob demanda): $e\n$st');
+    for (final entry in _maxPlayers.entries) {
+      try {
+        _pools[entry.key] = await FlameAudio.createPool(
+          entry.key,
+          minPlayers: 1,
+          maxPlayers: entry.value,
+        );
+      } catch (e) {
+        debugPrint('GameAudio: falha ao criar pool ${entry.key}: $e');
+      }
     }
   }
 
-  /// Toca um efeito (fire-and-forget). Falhas de áudio nunca quebram o jogo.
+  /// Toca um efeito reutilizando um player do pool (fire-and-forget).
   static void play(String name, {double volume = 1.0}) {
     if (muted) return;
-    unawaited(_playSafe(name, volume));
+    final pool = _pools[name];
+    if (pool == null) return;
+    unawaited(_safeStart(pool, name, volume));
   }
 
-  static Future<void> _playSafe(String name, double volume) async {
+  static Future<void> _safeStart(
+      AudioPool pool, String name, double volume) async {
     try {
-      await FlameAudio.play(name, volume: volume);
+      await pool.start(volume: volume);
     } catch (e) {
       debugPrint('GameAudio: falha ao tocar $name: $e');
     }
