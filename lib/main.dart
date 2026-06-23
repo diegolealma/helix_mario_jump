@@ -27,7 +27,10 @@ class _SuperMaiorWorldAppState extends State<SuperMaiorWorldApp> {
         backgroundColor: Colors.black,
         body: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onPanUpdate: (d) => game.onDragDx(d.delta.dx),
+          onPanStart: (_) => game.onDragStart(),
+          onPanUpdate: (d) => game.onDragUpdate(d.delta.dx, d.delta.dy),
+          onPanEnd: (_) => game.onDragEnd(),
+          onPanCancel: game.onDragEnd,
           onTapUp: (_) => game.onTapScreen(),
           child: GameWidget(game: game),
         ),

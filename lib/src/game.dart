@@ -24,6 +24,10 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   static const gravity = 2600.0;
   static const maxFall = 1500.0;
   static const bounceV = 830.0;
+  static const airJumpV = 900.0;
+  static const spinDiveV = 1180.0;
+  static const doubleTapWindow = 0.34;
+  static const swipeThreshold = 42.0;
   static const playerOrbitR = 105.0;
   static const tilt = 0.30; // achatamento da elipse (pseudo-3D)
 
@@ -42,10 +46,19 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   double py = 0; // Y do mundo (pés do personagem); cresce para baixo
   double vy = 0;
   bool superForm = false;
+  bool firePower = false;
+  bool spinDive = false;
+  double spinAngle = 0;
   double starT = 0; // tempo restante de estrela
+  double fireCooldown = 0;
   double invulnT = 0; // invencibilidade pós-dano
   double lastBounceT = -10;
   int passStreak = 0; // andares atravessados sem quicar (>=3 => modo fogo)
+  bool _airJumpUsed = true;
+  double _lastPlayTapT = -10;
+  bool _safeLandingAfterStar = false;
+  Offset _dragTotal = Offset.zero;
+  bool _dragActionTriggered = false;
 
   // Câmera
   double camY = 0;
@@ -60,6 +73,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
 
   final particles = <Particle>[];
   final floatTexts = <FloatText>[];
+  final fireShots = <FireShot>[];
 
   late final Renderer renderer = Renderer(this);
   final _rng = Random();
@@ -84,9 +98,18 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     py = Tower.firstY - 60;
     vy = 0;
     superForm = false;
+    firePower = false;
+    spinDive = false;
+    spinAngle = 0;
     starT = 0;
+    fireCooldown = 0;
     invulnT = 0;
     passStreak = 0;
+    _airJumpUsed = true;
+    _lastPlayTapT = -10;
+    _safeLandingAfterStar = false;
+    _dragTotal = Offset.zero;
+    _dragActionTriggered = false;
     camY = py - 300;
     shakeT = 0;
     score = 0;
@@ -95,6 +118,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     newBest = false;
     particles.clear();
     floatTexts.clear();
+    fireShots.clear();
     stateT = 0;
   }
 
@@ -108,6 +132,53 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     }
   }
 
+  void onDragStart() {
+    _dragTotal = Offset.zero;
+    _dragActionTriggered = false;
+  }
+
+  void onDragUpdate(double dx, double dy) {
+    if (dx != 0) onDragDx(dx);
+    if (state != GState.playing || _dragActionTriggered) return;
+
+    _dragTotal += Offset(dx, dy);
+    final vertical = _dragTotal.dy.abs();
+    final horizontal = _dragTotal.dx.abs();
+    if (vertical < swipeThreshold || vertical < horizontal * 1.25) return;
+
+    _dragActionTriggered = true;
+    if (_dragTotal.dy > 0) {
+      _startSpinDive();
+    } else {
+      _shootFire();
+    }
+  }
+
+  void onDragEnd() {
+    _dragTotal = Offset.zero;
+    _dragActionTriggered = false;
+  }
+
+  void _startSpinDive() {
+    final airborne = time - lastBounceT > 0.06;
+    if (state != GState.playing || !airborne || spinDive) return;
+    spinDive = true;
+    vy = max(vy, spinDiveV);
+    _airJumpUsed = true;
+    _lastPlayTapT = -10;
+  }
+
+  void _shootFire() {
+    if (state != GState.playing || !firePower || fireCooldown > 0) return;
+    final theta = _localTheta();
+    final y = py - _playerHeight * 0.45;
+    fireShots
+      ..add(FireShot(theta: theta - 0.08, y: y, angularV: -4.8))
+      ..add(FireShot(theta: theta + 0.08, y: y, angularV: 4.8));
+    fireCooldown = 0.45;
+    renderer.spawnFireBurst(y);
+  }
+
   void onTapScreen() {
     switch (state) {
       case GState.title:
@@ -119,6 +190,16 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
           _reset();
           state = GState.playing;
           GameAudio.play(GameAudio.start);
+        }
+      case GState.playing:
+        final sinceLastTap = time - _lastPlayTapT;
+        final hasLeftFloor = time - lastBounceT > 0.06;
+        if (sinceLastTap <= doubleTapWindow && hasLeftFloor && !_airJumpUsed) {
+          vy = -airJumpV;
+          _airJumpUsed = true;
+          _lastPlayTapT = -10;
+        } else {
+          _lastPlayTapT = time;
         }
       default:
         break;
@@ -143,9 +224,18 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
       onTapScreen();
       return KeyEventResult.handled;
     }
-    if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.keyM) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.keyM) {
       GameAudio.toggleMute();
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _startSpinDive();
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _shootFire();
       return KeyEventResult.handled;
     }
     return KeyEventResult.handled;
@@ -190,21 +280,34 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
 
   void _updatePlaying(double dt) {
     rot += _keyDir * 3.0 * dt;
+    final hadStar = starT > 0;
     starT = max(0, starT - dt);
+    fireCooldown = max(0, fireCooldown - dt);
+    if (spinDive) spinAngle += 14 * dt;
+    if (hadStar && starT == 0) {
+      _safeLandingAfterStar = true;
+      passStreak = 0;
+    }
     invulnT = max(0, invulnT - dt);
     shakeT = max(0, shakeT - dt);
 
-    // Inimigos patrulham.
-    for (final f in _visibleFloors()) {
+    // Inimigos, cascos e bolas de fogo.
+    final visible = _visibleFloors().toList();
+    for (final f in visible) {
       for (final e in f.enemies) {
         if (!e.dead) e.update(dt);
       }
+      _resolveShellHits(f);
     }
+    fireShots.removeWhere((shot) => !shot.update(dt));
+    _resolveFireHits(visible);
 
     vy = min(vy + gravity * dt, maxFall);
     var newY = py + vy * dt;
 
-    if (vy > 0) {
+    if (vy < 0) {
+      newY = _resolveCeiling(newY);
+    } else if (vy > 0) {
       // Verifica andares cruzados nesta etapa.
       var i = max(0, ((py - Tower.firstY) / Tower.floorSpacing).ceil());
       tower.ensureFloors(i + 16);
@@ -234,6 +337,85 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     if (py - camY > 430) camY = py - 430;
   }
 
+  void _resolveShellHits(Floor floor) {
+    for (final shell in floor.enemies) {
+      if (shell.dead || !shell.shellMoving) continue;
+      for (final target in floor.enemies) {
+        if (identical(shell, target) || target.dead || target.isShell) continue;
+        if (_angDiff(shell.theta, target.theta).abs() > 0.20) continue;
+        target.dead = true;
+        score += 250;
+        renderer.spawnStompPoof(floor, target);
+        renderer.spawnFloatText(floor.y - 52, '+250');
+      }
+    }
+  }
+
+  void _resolveFireHits(List<Floor> floors) {
+    for (final shot in fireShots) {
+      if (shot.dead) continue;
+      for (final floor in floors) {
+        if ((floor.y - shot.y).abs() > 76) continue;
+        for (final enemy in floor.enemies) {
+          if (enemy.dead) continue;
+          if (_angDiff(shot.theta, enemy.theta).abs() > 0.22) continue;
+          enemy.dead = true;
+          shot.dead = true;
+          score += 200;
+          renderer.spawnStompPoof(floor, enemy);
+          renderer.spawnFloatText(floor.y - 52, '+200');
+          break;
+        }
+        if (shot.dead) break;
+      }
+    }
+    fireShots.removeWhere((shot) => shot.dead);
+  }
+
+  double get _playerHeight => superForm ? 62.0 : 46.0;
+
+  /// Impede que a cabeça atravesse um andar durante a subida.
+  ///
+  /// Um vão continua atravessável, permitindo que o pulo duplo leve o
+  /// personagem de volta ao andar de cima. Em uma parte sólida, ele encosta
+  /// na face inferior da plataforma e começa a cair.
+  double _resolveCeiling(double newY) {
+    final oldHead = py - _playerHeight;
+    final newHead = newY - _playerHeight;
+    if (newHead >= oldHead) return newY;
+
+    final first = max(
+        0,
+        ((newHead - Tower.thickness - Tower.firstY) / Tower.floorSpacing)
+                .floor() -
+            1);
+    final last = max(
+        first,
+        ((oldHead - Tower.thickness - Tower.firstY) / Tower.floorSpacing)
+                .ceil() +
+            1);
+    tower.ensureFloors(last + 2);
+
+    final local = _localTheta();
+    for (var i = last; i >= first; i--) {
+      final floor = tower.floors[i];
+      if (floor.broken) continue;
+      final underside = floor.y + Tower.thickness;
+      if (underside >= oldHead || underside < newHead) continue;
+      if (floor.segAt(local) == SegType.gap) continue;
+
+      if (starT > 0) {
+        _breakFloor(floor);
+        continue;
+      }
+
+      vy = 90;
+      shakeT = max(shakeT, 0.08);
+      return underside + _playerHeight;
+    }
+    return newY;
+  }
+
   /// Retorna true se o jogador parou (quicou) neste andar.
   bool _resolveFloor(Floor floor) {
     final local = _localTheta();
@@ -243,6 +425,16 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
       _breakFloor(floor);
       _passFloor(floor);
       return false;
+    }
+
+    // O primeiro andar intacto encontrado após a estrela vira um pouso
+    // garantido: anel completo, sem espinhos e sem inimigos.
+    if (_safeLandingAfterStar) {
+      _makeFloorNeutral(floor);
+      _safeLandingAfterStar = false;
+      _bounce(floor);
+      renderer.spawnFloatText(floor.y - 48, 'POUSO SEGURO!');
+      return true;
     }
 
     final seg = floor.segAt(local);
@@ -261,15 +453,19 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
       return false;
     }
 
-    // Inimigo embaixo do jogador?
+    // Cair normalmente sobre qualquer inimigo causa dano. Os inimigos sem
+    // espinhos só podem ser derrotados com o mergulho giratório.
     for (final e in floor.enemies) {
       if (e.dead) continue;
       if (_angDiff(e.theta, local).abs() < 0.30) {
-        if (e.kind == EnemyKind.walker || invulnT > 0) {
-          _stomp(floor, e);
+        if (spinDive && e.kind != EnemyKind.spiky) {
+          _spinDefeat(floor, e);
           return true;
         }
-        // Espinhoso: dói pisar.
+        if (invulnT > 0) {
+          _bounce(floor);
+          return true;
+        }
         if (_damage(floor)) return true; // sobreviveu, quicou
         return false; // morreu
       }
@@ -300,8 +496,19 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     vy = -bounceV * boost;
     lastBounceT = time;
     passStreak = 0;
+    spinDive = false;
+    spinAngle = 0;
+    _airJumpUsed = false;
+    _lastPlayTapT = -10;
     renderer.spawnDust(floor.y);
     GameAudio.play(GameAudio.jump, volume: 0.6);
+  }
+
+  void _makeFloorNeutral(Floor floor) {
+    for (var i = 0; i < floor.segs.length; i++) {
+      floor.segs[i] = SegType.safe;
+    }
+    floor.enemies.clear();
   }
 
   void _passFloor(Floor floor) {
@@ -326,17 +533,35 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     renderer.spawnFloatText(floor.y - 40, '+300');
   }
 
-  void _stomp(Floor floor, Enemy e) {
-    e.dead = true;
-    score += 200;
+  void _spinDefeat(Floor floor, Enemy e) {
+    if (e.isKoopa) {
+      e.becomeShell(e.facingRight ? 1 : -1);
+      score += 300;
+      renderer.spawnFloatText(floor.y - 60, 'CASCO!');
+    } else if (e.isShell) {
+      e.launchShell(e.facingRight ? 1 : -1);
+      score += 100;
+      renderer.spawnFloatText(floor.y - 60, 'CHUTE!');
+    } else {
+      e.dead = true;
+      score += 200;
+      renderer.spawnFloatText(floor.y - 60, '+200');
+    }
     GameAudio.play(GameAudio.stomp);
     renderer.spawnStompPoof(floor, e);
-    renderer.spawnFloatText(floor.y - 60, '+200');
     _bounce(floor, boost: 1.12);
   }
 
   /// Aplica dano. Retorna true se o jogador sobreviveu.
   bool _damage(Floor floor) {
+    if (firePower) {
+      firePower = false;
+      superForm = true;
+      invulnT = 2.5;
+      GameAudio.play(GameAudio.hurt);
+      _bounce(floor);
+      return true;
+    }
     if (superForm) {
       superForm = false;
       invulnT = 2.5;
@@ -351,6 +576,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   void _die() {
     state = GState.dying;
     stateT = 0;
+    spinDive = false;
     vy = -750;
     GameAudio.play(GameAudio.death);
   }
@@ -386,7 +612,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
             renderer.spawnSparkle(itemY);
             renderer.spawnFloatText(itemY - 20, '+100');
           case ItemKind.mushroom:
-            if (superForm) {
+            if (superForm || firePower) {
               score += 500;
               renderer.spawnFloatText(itemY - 20, '+500');
             } else {
@@ -395,9 +621,17 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
             }
             GameAudio.play(GameAudio.powerup);
             renderer.spawnSparkle(itemY);
+          case ItemKind.fireFlower:
+            superForm = true;
+            firePower = true;
+            GameAudio.play(GameAudio.powerup);
+            renderer.spawnFloatText(itemY - 20, 'FLOR DE FOGO!');
+            renderer.spawnSparkle(itemY);
           case ItemKind.star:
             starT = 8;
             GameAudio.play(GameAudio.star);
+            passStreak = 0;
+            _safeLandingAfterStar = false;
             renderer.spawnFloatText(itemY - 20, 'ESTRELA!');
             renderer.spawnSparkle(itemY);
         }
@@ -415,6 +649,10 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   }
 
   List<Floor> visibleFloors() => _visibleFloors().toList();
+
+  List<FireShot> visibleFireShots() => fireShots
+      .where((shot) => shot.y - camY > -100 && shot.y - camY < designH + 100)
+      .toList();
 
   void _updateParticles(double dt) {
     particles.removeWhere((p) => !p.update(dt));

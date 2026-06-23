@@ -4,9 +4,16 @@ import 'dart:ui';
 /// Tipo de cada segmento do anel de um andar.
 enum SegType { gap, safe, danger }
 
-enum EnemyKind { walker, spiky }
+enum EnemyKind {
+  walker,
+  spiky,
+  koopaGreen,
+  koopaRed,
+  shellGreen,
+  shellRed,
+}
 
-enum ItemKind { coin, mushroom, star }
+enum ItemKind { coin, mushroom, fireFlower, star }
 
 class Enemy {
   Enemy({
@@ -17,7 +24,7 @@ class Enemy {
     required this.phase,
   });
 
-  final EnemyKind kind;
+  EnemyKind kind;
 
   /// Patrulha em vai-e-vem: theta = center + sin(phase) * halfRange.
   final double center;
@@ -25,14 +32,66 @@ class Enemy {
   final double speed;
   double phase;
   bool dead = false;
+  double? shellTheta;
+  double shellAngularV = 0;
+  double shellSpin = 0;
 
-  double get theta => center + sin(phase) * halfRange;
+  bool get isKoopa =>
+      kind == EnemyKind.koopaGreen || kind == EnemyKind.koopaRed;
+
+  bool get isShell =>
+      kind == EnemyKind.shellGreen || kind == EnemyKind.shellRed;
+
+  bool get shellMoving => isShell && shellAngularV.abs() > 0.01;
+
+  double get theta => shellTheta ?? center + sin(phase) * halfRange;
 
   /// Direção de caminhada (para espelhar o sprite).
-  bool get facingRight => cos(phase) >= 0;
+  bool get facingRight => isShell ? shellAngularV >= 0 : cos(phase) >= 0;
+
+  void becomeShell(double direction) {
+    final currentTheta = theta;
+    kind =
+        kind == EnemyKind.koopaRed ? EnemyKind.shellRed : EnemyKind.shellGreen;
+    shellTheta = currentTheta;
+    shellAngularV = direction.sign * 5.2;
+  }
+
+  void launchShell(double direction) {
+    if (!isShell) return;
+    shellAngularV = direction.sign * 5.2;
+  }
 
   void update(double dt) {
+    if (isShell) {
+      shellTheta =
+          ((theta + shellAngularV * dt) % (2 * pi) + 2 * pi) % (2 * pi);
+      shellSpin += shellAngularV * dt * 2.2;
+      return;
+    }
     if (halfRange > 0.01) phase += speed * dt;
+  }
+}
+
+class FireShot {
+  FireShot({
+    required this.theta,
+    required this.y,
+    required this.angularV,
+  });
+
+  double theta;
+  final double y;
+  final double angularV;
+  double life = 1.35;
+  double spin = 0;
+  bool dead = false;
+
+  bool update(double dt) {
+    theta = ((theta + angularV * dt) % (2 * pi) + 2 * pi) % (2 * pi);
+    spin += angularV * dt * 2.6;
+    life -= dt;
+    return !dead && life > 0;
   }
 }
 
@@ -69,7 +128,7 @@ class Tower {
 
   static const segCount = 12;
   static const segAngle = 2 * pi / segCount;
-  static const floorSpacing = 150.0;
+  static const floorSpacing = 195.0;
   static const thickness = 26.0;
   static const outerR = 150.0;
   static const poleR = 40.0;
@@ -146,21 +205,34 @@ class Tower {
     }
 
     // --- Inimigos patrulhando trechos seguros ---
-    final enemyChance = d < 5 ? 0.0 : min(0.15 + d * 0.012, 0.55);
+    final enemyChance = d < 4 ? 0.0 : min(0.25 + d * 0.015, 0.72);
     if (rnd.nextDouble() < enemyChance) {
-      final run = _randomSafeRun(segs);
-      if (run != null) {
+      final enemyCount = 1 + (d > 8 && rnd.nextDouble() < 0.38 ? 1 : 0);
+      for (var n = 0; n < enemyCount; n++) {
+        final run = _randomSafeRun(segs);
+        if (run == null) continue;
         final (startSeg, len) = run;
         final a0 = startSeg * segAngle + 0.18;
         final a1 = (startSeg + len) * segAngle - 0.18;
-        final spikyRatio = min(0.3 + d * 0.01, 0.6);
+        final roll = rnd.nextDouble();
+        final EnemyKind kind;
+        if (roll < min(0.16 + d * 0.006, 0.34)) {
+          kind = EnemyKind.spiky;
+        } else if (roll < 0.48) {
+          kind = EnemyKind.walker;
+        } else if (d > 7 && roll > 0.77) {
+          kind = EnemyKind.koopaRed;
+        } else {
+          kind = EnemyKind.koopaGreen;
+        }
         floor.enemies.add(Enemy(
-          kind: rnd.nextDouble() < spikyRatio
-              ? EnemyKind.spiky
-              : EnemyKind.walker,
+          kind: kind,
           center: (a0 + a1) / 2,
-          halfRange: max(0, (a1 - a0) / 2),
-          speed: 0.9 + min(d * 0.025, 1.1) + rnd.nextDouble() * 0.4,
+          halfRange: max(0, (a1 - a0) / (kind == EnemyKind.koopaRed ? 2.5 : 2)),
+          speed: 0.9 +
+              min(d * 0.025, 1.1) +
+              rnd.nextDouble() * 0.4 +
+              (kind == EnemyKind.koopaGreen ? 0.25 : 0),
           phase: rnd.nextDouble() * 2 * pi,
         ));
       }
@@ -181,6 +253,12 @@ class Tower {
     if (d > 4 && d % 9 == 0 && rnd.nextDouble() < 0.85) {
       floor.items.add(FloorItem(
         kind: ItemKind.mushroom,
+        theta: rnd.nextDouble() * 2 * pi,
+        bobPhase: rnd.nextDouble() * 2 * pi,
+      ));
+    } else if (d > 5 && d % 7 == 0 && rnd.nextDouble() < 0.82) {
+      floor.items.add(FloorItem(
+        kind: ItemKind.fireFlower,
         theta: rnd.nextDouble() * 2 * pi,
         bobPhase: rnd.nextDouble() * 2 * pi,
       ));

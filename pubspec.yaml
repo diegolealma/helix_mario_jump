@@ -22,6 +22,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/audio/
+    - assets/sprites/
   fonts:
     - family: PressStart2P
       fonts:

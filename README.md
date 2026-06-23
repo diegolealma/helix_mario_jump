@@ -7,10 +7,14 @@ web e, futuramente, mobile (Android/iOS) sem mudanças de código.
 ## Como jogar
 
 - **Arraste** (ou setas ← → / A-D) para girar a torre.
+- Dê **dois toques rápidos** para usar um pulo extra no ar; ele recarrega ao quicar.
+- **Arraste para baixo** para mergulhar girando. Goombas e Koopas só são derrotados assim; cair normalmente sobre eles causa dano.
+- Pegue a **Flor de Fogo** e **arraste para cima** para lançar uma bola de fogo para cada lado.
 - Caia pelos **vãos** das plataformas; evite os segmentos de **lava com espinhos**.
 - Atravesse **3 andares sem quicar** para entrar no **MODO FOGO** e quebrar a próxima plataforma.
-- **Pise nos goombas** para ganhar pontos e quicar mais alto — mas nunca pise nos **espinhosos**!
-- **Cogumelo** = forma Super (aguenta 1 dano). **Estrela** = invencível, quebra tudo por 8s. **Moedas** = pontos.
+- Ataque **Goombas e Koopas girando** para ganhar pontos e quicar mais alto — os **espinhosos** continuam perigosos.
+- **Koopas verdes e vermelhas** viram cascos em movimento após um ataque giratório; os cascos eliminam outros inimigos.
+- **Cogumelo** = forma Super. **Flor** = poder de fogo. **Estrela** = invencível, quebra tudo por 8s e garante o próximo pouso em um andar seguro. **Moedas** = pontos.
 - O recorde fica salvo no navegador.
 
 ## Rodar localmente

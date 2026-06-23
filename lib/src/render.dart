@@ -1,4 +1,4 @@
-﻿import 'dart:math';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart' show Vector2;
@@ -116,11 +116,9 @@ class Renderer {
     c.drawCircle(Offset(x - 24 * s, y), 16 * s, _paint);
     c.drawCircle(Offset(x, y - 10 * s), 22 * s, _paint);
     c.drawCircle(Offset(x + 26 * s, y), 17 * s, _paint);
-    c.drawRect(
-        Rect.fromLTWH(x - 38 * s, y - 2 * s, 76 * s, 16 * s), _paint);
+    c.drawRect(Rect.fromLTWH(x - 38 * s, y - 2 * s, 76 * s, 16 * s), _paint);
     _paint.color = Pal.cloudShade;
-    c.drawRect(
-        Rect.fromLTWH(x - 34 * s, y + 10 * s, 68 * s, 4 * s), _paint);
+    c.drawRect(Rect.fromLTWH(x - 34 * s, y + 10 * s, 68 * s, 4 * s), _paint);
   }
 
   void _drawHill(Canvas c, double cx, double baseY, double w, double h) {
@@ -146,8 +144,7 @@ class Renderer {
     for (var i = 0; i < 5; i++) {
       final px = cx + (i * 37 % (w * 1.2)) - w * 0.6;
       final py = baseY - (i * 23 % (h * 0.8)) - h * 0.1;
-      c.drawOval(
-          Rect.fromCenter(center: Offset(px, py), width: 14, height: 8),
+      c.drawOval(Rect.fromCenter(center: Offset(px, py), width: 14, height: 8),
           _paint);
     }
   }
@@ -159,8 +156,8 @@ class Renderer {
     c.drawCircle(Offset(cx - w * 0.5, baseY - h * 0.3), h * 0.55, _paint);
     c.drawCircle(Offset(cx, baseY - h * 0.5), h * 0.7, _paint);
     c.drawCircle(Offset(cx + w * 0.5, baseY - h * 0.3), h * 0.55, _paint);
-    c.drawRect(Rect.fromLTWH(cx - w * 0.7, baseY - h * 0.3, w * 1.4, h * 0.3),
-        _paint);
+    c.drawRect(
+        Rect.fromLTWH(cx - w * 0.7, baseY - h * 0.3, w * 1.4, h * 0.3), _paint);
   }
 
   // ------------------------------------------------------------- torre
@@ -176,6 +173,7 @@ class Renderer {
     for (final f in floors) {
       _drawEntities(c, f, back: true);
     }
+    _drawFireShots(c, back: true);
     // 3) Cano central.
     _drawPole(c);
     // 4) Metades da frente.
@@ -185,6 +183,7 @@ class Renderer {
     for (final f in floors) {
       _drawEntities(c, f, back: false);
     }
+    _drawFireShots(c, back: false);
   }
 
   void _drawPole(Canvas c) {
@@ -194,7 +193,8 @@ class Renderer {
     _paint.color = Pal.pipeDark;
     c.drawRect(const Rect.fromLTWH(_cx - r, 0, r * 2, designH), _paint);
     _paint.color = Pal.pipe;
-    c.drawRect(const Rect.fromLTWH(_cx - r + 8, 0, r * 2 - 20, designH), _paint);
+    c.drawRect(
+        const Rect.fromLTWH(_cx - r + 8, 0, r * 2 - 20, designH), _paint);
     _paint.color = Pal.pipeLight;
     c.drawRect(const Rect.fromLTWH(_cx - r + 14, 0, 10, designH), _paint);
     _paint.color = Pal.pipeDarker;
@@ -294,8 +294,7 @@ class Renderer {
         final a = (s + frac) * segA + g.rot;
         final z = cos(a);
         if (z <= 0.05) continue;
-        final base =
-            _proj(a, (Tower.poleR + Tower.outerR) * 0.55, f.y);
+        final base = _proj(a, (Tower.poleR + Tower.outerR) * 0.55, f.y);
         final h = 15 * (0.6 + 0.4 * z);
         final w = 6.5 * (0.6 + 0.4 * z);
         final spike = Path()
@@ -326,14 +325,46 @@ class Renderer {
       final z = cos(sa);
       if (back ? z >= 0 : z < 0) continue;
       final pos = _proj(sa, SuperHelixGame.playerOrbitR, f.y);
-      final h = 34 * (0.72 + 0.28 * z);
-      final img =
-          e.kind == EnemyKind.walker ? g.sprites.goomba : g.sprites.spiky;
-      final wob = e.kind == EnemyKind.walker
-          ? sin(g.time * 10 + e.phase) * 0.06
-          : 0.0;
-      drawSprite(c, img, pos, h,
-          flipX: !e.facingRight, scaleX: 1 + wob, scaleY: 1 - wob);
+      final scale = 0.72 + 0.28 * z;
+      late ui.Image img;
+      late double h;
+      var rotation = 0.0;
+      switch (e.kind) {
+        case EnemyKind.walker:
+          img = g.sprites.goomba;
+          h = 34 * scale;
+        case EnemyKind.spiky:
+          img = g.sprites.spiky;
+          h = 34 * scale;
+        case EnemyKind.koopaGreen:
+          img = g.sprites.koopaGreen;
+          h = 46 * scale;
+        case EnemyKind.koopaRed:
+          img = g.sprites.koopaRed;
+          h = 46 * scale;
+        case EnemyKind.shellGreen:
+          img = g.sprites.shellGreen;
+          h = 25 * scale;
+          rotation = e.shellSpin;
+        case EnemyKind.shellRed:
+          img = g.sprites.shellRed;
+          h = 25 * scale;
+          rotation = e.shellSpin;
+      }
+      final wob =
+          e.kind == EnemyKind.walker ? sin(g.time * 10 + e.phase) * 0.06 : 0.0;
+      final originalFacesLeft =
+          e.kind == EnemyKind.koopaGreen || e.kind == EnemyKind.koopaRed;
+      drawSprite(
+        c,
+        img,
+        pos,
+        h,
+        flipX: originalFacesLeft ? e.facingRight : !e.facingRight,
+        scaleX: 1 + wob,
+        scaleY: 1 - wob,
+        rotation: rotation,
+      );
     }
 
     for (final item in f.items) {
@@ -353,11 +384,28 @@ class Renderer {
         case ItemKind.mushroom:
           _glow(c, pos + const Offset(0, -2), 26 * s, Pal.white);
           drawSprite(c, g.sprites.mushroom, pos + const Offset(0, 13), 30 * s);
+        case ItemKind.fireFlower:
+          _glow(c, pos + const Offset(0, -2), 28 * s, Pal.lavaLight);
+          drawSprite(
+              c, g.sprites.fireFlower, pos + const Offset(0, 14), 31 * s);
         case ItemKind.star:
           _glow(c, pos + const Offset(0, -2), 30 * s,
               Pal.hudYellow.withValues(alpha: 0.9));
           drawSprite(c, g.sprites.star, pos + const Offset(0, 14), 30 * s);
       }
+    }
+  }
+
+  void _drawFireShots(Canvas c, {required bool back}) {
+    for (final shot in g.visibleFireShots()) {
+      final sa = shot.theta + g.rot;
+      final z = cos(sa);
+      if (back ? z >= 0 : z < 0) continue;
+      final pos = _proj(sa, SuperHelixGame.playerOrbitR, shot.y);
+      final s = 0.72 + 0.28 * z;
+      _glow(c, pos, 15 * s, Pal.lavaLight);
+      drawSprite(c, g.sprites.fireball, pos + Offset(0, 8 * s), 18 * s,
+          rotation: shot.spin);
     }
   }
 
@@ -392,9 +440,14 @@ class Renderer {
         final hue = (g.time * 300) % 360;
         _paint
           ..style = PaintingStyle.fill
-          ..color =
-              HSVColor.fromAHSV(0.45, hue, 0.9, 1).toColor();
+          ..color = HSVColor.fromAHSV(0.45, hue, 0.9, 1).toColor();
         c.drawCircle(Offset(px, pyScreen - h / 2), h * 0.85, _paint);
+      } else if (g.firePower) {
+        _paint
+          ..style = PaintingStyle.fill
+          ..color = Pal.lavaLight
+              .withValues(alpha: 0.18 + 0.08 * sin(g.time * 8).abs());
+        c.drawCircle(Offset(px, pyScreen - h / 2), h * 0.72, _paint);
       } else if (g.fever && falling) {
         final flick = 0.85 + 0.15 * sin(g.time * 30);
         _paint
@@ -437,7 +490,29 @@ class Renderer {
       return;
     }
 
-    drawSprite(c, img, Offset(px, pyScreen), h, scaleX: sx, scaleY: sy);
+    void drawCurrent({Paint? paint}) {
+      if (g.spinDive && g.state == GState.playing) {
+        c.save();
+        c.translate(px, pyScreen - h / 2);
+        c.rotate(g.spinAngle);
+        drawSprite(c, img, Offset(0, h / 2), h,
+            scaleX: sx, scaleY: sy, paint: paint);
+        c.restore();
+      } else {
+        drawSprite(c, img, Offset(px, pyScreen), h,
+            scaleX: sx, scaleY: sy, paint: paint);
+      }
+    }
+
+    drawCurrent();
+
+    if (g.firePower && g.starT <= 0 && g.state == GState.playing) {
+      final fireTint = Paint()
+        ..filterQuality = FilterQuality.none
+        ..colorFilter = ColorFilter.mode(
+            Pal.lavaLight.withValues(alpha: 0.28), BlendMode.srcATop);
+      drawCurrent(paint: fireTint);
+    }
 
     // Tinta cintilante da estrela por cima do sprite.
     if (g.starT > 0 && g.state == GState.playing) {
@@ -446,8 +521,7 @@ class Renderer {
         ..filterQuality = FilterQuality.none
         ..colorFilter = ColorFilter.mode(
             HSVColor.fromAHSV(0.5, hue, 1, 1).toColor(), BlendMode.srcATop);
-      drawSprite(c, img, Offset(px, pyScreen), h,
-          scaleX: sx, scaleY: sy, paint: tint);
+      drawCurrent(paint: tint);
     }
   }
 
@@ -474,9 +548,7 @@ class Renderer {
       ..color = const Color(0x40000000);
     c.drawOval(
         Rect.fromCenter(
-            center: Offset(_cx, sy),
-            width: 46 * wFactor,
-            height: 14 * wFactor),
+            center: Offset(_cx, sy), width: 46 * wFactor, height: 14 * wFactor),
         _paint);
   }
 
@@ -495,8 +567,7 @@ class Renderer {
         final outward = dir == 0 ? (_rng.nextBool() ? 1 : -1) : dir;
         g.particles.add(Particle(
           pos: pos,
-          vel: Offset(outward * (60 + _rng.nextDouble() * 200) +
-                  sin(a) * 80,
+          vel: Offset(outward * (60 + _rng.nextDouble() * 200) + sin(a) * 80,
               -120 - _rng.nextDouble() * 160),
           color: f.segs[s] == SegType.safe
               ? (k == 0 ? Pal.grass : Pal.dirt)
@@ -514,8 +585,8 @@ class Renderer {
     for (var i = 0; i < 5; i++) {
       g.particles.add(Particle(
         pos: base + Offset((_rng.nextDouble() - 0.5) * 30, 0),
-        vel: Offset((_rng.nextDouble() - 0.5) * 120,
-            -30 - _rng.nextDouble() * 60),
+        vel: Offset(
+            (_rng.nextDouble() - 0.5) * 120, -30 - _rng.nextDouble() * 60),
         color: Pal.white.withValues(alpha: 0.8),
         size: 5 + _rng.nextDouble() * 4,
         life: 0.35,
@@ -539,13 +610,30 @@ class Renderer {
     }
   }
 
+  void spawnFireBurst(double worldY) {
+    final base = Offset(_cx, _playerScreenY(worldY));
+    for (final direction in const [-1.0, 1.0]) {
+      for (var i = 0; i < 4; i++) {
+        g.particles.add(Particle(
+          pos: base,
+          vel: Offset(direction * (75 + _rng.nextDouble() * 90),
+              (_rng.nextDouble() - 0.5) * 80),
+          color: i.isEven ? Pal.lavaLight : Pal.hudYellow,
+          size: 4 + _rng.nextDouble() * 3,
+          life: 0.35,
+          gravity: 0,
+        ));
+      }
+    }
+  }
+
   void spawnStompPoof(Floor f, Enemy e) {
     final pos = _proj(e.theta + g.rot, SuperHelixGame.playerOrbitR, f.y);
     for (var i = 0; i < 7; i++) {
       g.particles.add(Particle(
         pos: pos + Offset(0, -10),
-        vel: Offset((_rng.nextDouble() - 0.5) * 220,
-            -50 - _rng.nextDouble() * 120),
+        vel: Offset(
+            (_rng.nextDouble() - 0.5) * 220, -50 - _rng.nextDouble() * 120),
         color: i.isEven ? Pal.brown : Pal.tan,
         size: 6 + _rng.nextDouble() * 5,
         life: 0.5,
@@ -598,7 +686,9 @@ class Renderer {
     _text(c, 'ANDAR', designW - 18, 16, 11, Pal.hudYellow, align: 'right');
     _text(c, '${g.depth}', designW - 18, 33, 17, Pal.hudWhite, align: 'right');
 
-    if (g.superForm) {
+    if (g.firePower) {
+      drawSprite(c, g.sprites.fireFlower, const Offset(designW - 30, 86), 23);
+    } else if (g.superForm) {
       drawSprite(c, g.sprites.mushroom, const Offset(designW - 30, 86), 22);
     }
 
@@ -614,8 +704,7 @@ class Renderer {
       c.drawRect(Rect.fromLTWH(_cx - w / 2, 18, w * frac, 10), _paint);
     } else if (g.fever && g.state == GState.playing) {
       final pulse = (g.time * 8).floor().isEven;
-      _text(c, 'MODO FOGO!', _cx, 20, 15,
-          pulse ? Pal.lavaLight : Pal.hudYellow,
+      _text(c, 'MODO FOGO!', _cx, 20, 15, pulse ? Pal.lavaLight : Pal.hudYellow,
           align: 'center');
     }
   }
@@ -625,21 +714,22 @@ class Renderer {
   void _drawTitle(Canvas c) {
     _logoText(c, 'SUPER', _cx, 130, 26);
     _logoText(c, 'MAIOR WORLD', _cx, 170, 32);
-    _text(c, 'HELIX JUMP EDITION', _cx, 218, 12, Pal.hudWhite,
-        align: 'center');
+    _text(c, 'HELIX JUMP EDITION', _cx, 218, 12, Pal.hudWhite, align: 'center');
 
     if ((g.time * 1.6).floor().isEven) {
       _text(c, 'TOQUE PARA COMECAR', _cx, 600, 15, Pal.hudWhite,
           align: 'center');
     }
-    _text(c, 'ARRASTE OU USE SETAS PARA GIRAR', _cx, 660, 9.5,
-        Pal.hudYellow,
+    _text(c, 'ARRASTE OU USE SETAS PARA GIRAR', _cx, 642, 9.5, Pal.hudYellow,
         align: 'center');
-    _text(c, '3 ANDARES SEM QUICAR = MODO FOGO', _cx, 682, 9.5,
-        Pal.hudYellow,
+    _text(c, '2 TOQUES RAPIDOS = PULO DUPLO', _cx, 664, 9.5, Pal.hudYellow,
+        align: 'center');
+    _text(c, 'PUXE BAIXO = GIRO / CIMA = FOGO', _cx, 686, 9.0, Pal.hudYellow,
+        align: 'center');
+    _text(c, '3 ANDARES SEM QUICAR = MODO FOGO', _cx, 708, 9.5, Pal.hudYellow,
         align: 'center');
     if (g.best > 0) {
-      _text(c, 'RECORDE ${g.best}', _cx, 720, 11, Pal.hudWhite,
+      _text(c, 'RECORDE ${g.best}', _cx, 742, 11, Pal.hudWhite,
           align: 'center');
     }
   }
@@ -663,15 +753,11 @@ class Renderer {
     c.drawRRect(panel, _paint);
 
     _logoText(c, 'FIM DE JOGO', _cx, 300, 24);
-    _text(c, 'PONTOS  ${g.score}', _cx, 360, 15, Pal.hudWhite,
-        align: 'center');
-    _text(c, 'ANDAR   ${g.depth}', _cx, 392, 15, Pal.hudWhite,
-        align: 'center');
-    _text(c, 'MOEDAS  ${g.coins}', _cx, 424, 15, Pal.hudWhite,
-        align: 'center');
+    _text(c, 'PONTOS  ${g.score}', _cx, 360, 15, Pal.hudWhite, align: 'center');
+    _text(c, 'ANDAR   ${g.depth}', _cx, 392, 15, Pal.hudWhite, align: 'center');
+    _text(c, 'MOEDAS  ${g.coins}', _cx, 424, 15, Pal.hudWhite, align: 'center');
     if (g.newBest && (g.time * 3).floor().isEven) {
-      _text(c, 'NOVO RECORDE!', _cx, 466, 15, Pal.hudYellow,
-          align: 'center');
+      _text(c, 'NOVO RECORDE!', _cx, 466, 15, Pal.hudYellow, align: 'center');
     } else if (!g.newBest) {
       _text(c, 'RECORDE ${g.best}', _cx, 466, 13, Pal.hudYellow,
           align: 'center');

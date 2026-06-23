@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/painting.dart';
 
 import 'palette.dart';
@@ -155,7 +156,27 @@ const _coin = [
   '.....YYYYYY.....',
 ];
 
-/// Sprites pixel-art gerados em tempo de carga (sem assets binários).
+const _fireball = [
+  '...RR...',
+  '.RROOR..',
+  'RROYYOR.',
+  'ROYYYYOR',
+  'ROYYYYOR',
+  '.ROYYOR.',
+  '..ROOR..',
+  '...RR...',
+];
+
+Future<ui.Image> _loadAsset(String path) async {
+  final data = await rootBundle.load(path);
+  final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  final codec = await ui.instantiateImageCodec(bytes);
+  final frame = await codec.getNextFrame();
+  codec.dispose();
+  return frame.image;
+}
+
+/// Sprites pixel-art gerados em tempo de carga e quadros originais em assets.
 class Sprites {
   late final ui.Image playerJump;
   late final ui.Image playerFall;
@@ -164,15 +185,45 @@ class Sprites {
   late final ui.Image mushroom;
   late final ui.Image star;
   late final ui.Image coin;
+  late final ui.Image fireFlower;
+  late final ui.Image koopaGreen;
+  late final ui.Image koopaRed;
+  late final ui.Image shellGreen;
+  late final ui.Image shellRed;
+  late final ui.Image fireball;
 
   Future<void> load() async {
-    playerJump = await _build(_playerJump);
-    playerFall = await _build(_playerFall);
-    goomba = await _build(_goomba);
-    spiky = await _build(_spiky);
-    mushroom = await _build(_mushroom);
-    star = await _build(_star);
-    coin = await _build(_coin);
+    final generated = await Future.wait([
+      _build(_playerJump),
+      _build(_playerFall),
+      _build(_goomba),
+      _build(_spiky),
+      _build(_mushroom),
+      _build(_star),
+      _build(_coin),
+      _build(_fireball),
+    ]);
+    playerJump = generated[0];
+    playerFall = generated[1];
+    goomba = generated[2];
+    spiky = generated[3];
+    mushroom = generated[4];
+    star = generated[5];
+    coin = generated[6];
+    fireball = generated[7];
+
+    final originals = await Future.wait([
+      _loadAsset('assets/sprites/fire_flower.gif'),
+      _loadAsset('assets/sprites/koopa_green.gif'),
+      _loadAsset('assets/sprites/koopa_red.gif'),
+      _loadAsset('assets/sprites/shell_green.png'),
+      _loadAsset('assets/sprites/shell_red.png'),
+    ]);
+    fireFlower = originals[0];
+    koopaGreen = originals[1];
+    koopaRed = originals[2];
+    shellGreen = originals[3];
+    shellRed = originals[4];
   }
 }
 
@@ -188,6 +239,7 @@ void drawSprite(
   double scaleX = 1,
   double scaleY = 1,
   bool flipX = false,
+  double rotation = 0,
   Paint? paint,
 }) {
   final aspect = img.width / img.height;
@@ -195,12 +247,24 @@ void drawSprite(
   final w = height * aspect * scaleX;
   c.save();
   c.translate(feet.dx, feet.dy);
-  if (flipX) c.scale(-1, 1);
-  c.drawImageRect(
-    img,
-    Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-    Rect.fromLTWH(-w / 2, -h, w, h),
-    paint ?? pixelPaint,
-  );
+  if (rotation != 0) {
+    c.translate(0, -h / 2);
+    c.rotate(rotation);
+    if (flipX) c.scale(-1, 1);
+    c.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(-w / 2, -h / 2, w, h),
+      paint ?? pixelPaint,
+    );
+  } else {
+    if (flipX) c.scale(-1, 1);
+    c.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(-w / 2, -h, w, h),
+      paint ?? pixelPaint,
+    );
+  }
   c.restore();
 }
