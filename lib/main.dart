@@ -1,7 +1,6 @@
-import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
-import 'src/game.dart';
+import 'src/youface_prototype.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,25 +15,12 @@ class SuperMaiorWorldApp extends StatefulWidget {
 }
 
 class _SuperMaiorWorldAppState extends State<SuperMaiorWorldApp> {
-  final game = SuperHelixGame();
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Super Maior World',
+      title: 'YouFace Camera Test',
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: Colors.black,
-        body: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) => game.onDragStart(),
-          onPanUpdate: (d) => game.onDragUpdate(d.delta.dx, d.delta.dy),
-          onPanEnd: (_) => game.onDragEnd(),
-          onPanCancel: game.onDragEnd,
-          onTapUp: (_) => game.onTapScreen(),
-          child: GameWidget(game: game),
-        ),
-      ),
+      home: const YouFacePrototypeScreen(),
     );
   }
 }

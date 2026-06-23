@@ -1,2 +1,8 @@
 flutter pub get
 flutter run -d chrome
+flutter emulators
+flutter emulators --launch YouFace_API_36
+flutter run -d emulator-5554
+flutter build apk --release
+adb devices
+adb install -r "build\app\outputs\flutter-apk\app-release.apk"
