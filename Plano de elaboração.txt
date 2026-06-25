@@ -1,0 +1,26 @@
+Ranking com faces
+Face Filters
+Customização de personagem.
+Fases com mecânicas diferentes
+
+
+
+
+---------------------------------
+Ajustar distância de andar
+
+pisos quebráveis no primeiro pulo
+
+Blocos no ar que quebram, não quebram, e que liberam itens.
+
+Variar inimigos
+
+Mecânica de fase para subir, descer, ir para os lados.
+
+Mecânica de movimentação
+
+Mecânica de poderes diferentes
+
+Música e sons.
+
+Chefões.
