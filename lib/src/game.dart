@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -9,6 +11,7 @@ import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio.dart';
+import 'face_capture.dart';
 import 'model.dart';
 import 'render.dart';
 import 'sprites.dart';
@@ -24,15 +27,39 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   static const gravity = 2600.0;
   static const maxFall = 1500.0;
   static const bounceV = 830.0;
-  static const airJumpV = 900.0;
+  static const airJumpV = 1080.0;
+  static const airJumpCameraFollowT = 0.55;
   static const spinDiveV = 1180.0;
   static const doubleTapWindow = 0.34;
   static const swipeThreshold = 42.0;
   static const playerOrbitR = 105.0;
   static const tilt = 0.30; // achatamento da elipse (pseudo-3D)
+  static const cameraTopSafeFeetY = 175.0;
+  static const cameraBottomSafeFeetY = 455.0;
 
   final sprites = Sprites();
   SharedPreferences? _prefs;
+
+  // Captura facial (web): o rosto do jogador vira a cabeça do personagem.
+  final WebFaceCapture faceCapture = WebFaceCapture();
+  ui.Image? faceImage;
+  bool _faceStarted = false;
+  double _facePollT = 0;
+
+  bool get hasFace => faceImage != null;
+
+  /// Dica de câmera para a HUD (apenas web, enquanto não está ao vivo).
+  String? get cameraHint {
+    if (!faceCapture.isSupported) return null;
+    switch (faceCapture.status) {
+      case 'live':
+        return null;
+      case 'starting':
+        return 'INICIANDO CAMERA...';
+      default:
+        return 'TOQUE PARA ATIVAR SUA CAMERA';
+    }
+  }
 
   GState state = GState.loading;
   double stateT = 0;
@@ -63,6 +90,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   // Câmera
   double camY = 0;
   double shakeT = 0;
+  double _airJumpCameraT = 0;
 
   // Pontuação
   int score = 0;
@@ -89,6 +117,36 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     _reset();
     state = GState.title;
     add(_ScenePainter());
+
+    if (faceCapture.isSupported) {
+      _faceStarted = true;
+      unawaited(faceCapture.start());
+    }
+  }
+
+  void _pollFace() {
+    if (!faceCapture.hasFace || faceCapture.status != 'live') {
+      _clearFaceImage();
+      return;
+    }
+
+    faceCapture.takeFrameIfNew().then((img) {
+      if (!faceCapture.hasFace || faceCapture.status != 'live') {
+        img?.dispose();
+        _clearFaceImage();
+        return;
+      }
+      if (img == null) return;
+      faceImage?.dispose();
+      faceImage = img;
+    });
+  }
+
+  void _clearFaceImage() {
+    final old = faceImage;
+    if (old == null) return;
+    faceImage = null;
+    old.dispose();
   }
 
   void _reset() {
@@ -112,6 +170,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     _dragActionTriggered = false;
     camY = py - 300;
     shakeT = 0;
+    _airJumpCameraT = 0;
     score = 0;
     coins = 0;
     depth = 0;
@@ -165,6 +224,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     spinDive = true;
     vy = max(vy, spinDiveV);
     _airJumpUsed = true;
+    _airJumpCameraT = 0;
     _lastPlayTapT = -10;
   }
 
@@ -180,6 +240,10 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
   }
 
   void onTapScreen() {
+    // Um gesto do usuário é a forma mais confiável de (re)abrir a câmera no web.
+    if (faceCapture.isSupported && faceCapture.status != 'live') {
+      unawaited(faceCapture.start());
+    }
     switch (state) {
       case GState.title:
         _reset();
@@ -197,6 +261,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
         if (sinceLastTap <= doubleTapWindow && hasLeftFloor && !_airJumpUsed) {
           vy = -airJumpV;
           _airJumpUsed = true;
+          _airJumpCameraT = airJumpCameraFollowT;
           _lastPlayTapT = -10;
         } else {
           _lastPlayTapT = time;
@@ -251,6 +316,15 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     time += clamped;
     stateT += clamped;
     _updateParticles(clamped);
+
+    // Puxa um quadro novo do rosto (~15 fps) sem travar o loop.
+    if (_faceStarted) {
+      _facePollT += clamped;
+      if (_facePollT >= 0.06) {
+        _facePollT = 0;
+        _pollFace();
+      }
+    }
 
     switch (state) {
       case GState.title:
@@ -329,12 +403,24 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
 
     _collectItems();
 
-    // Câmera persegue o jogador (apenas descendo).
+    if (_airJumpCameraT > 0) {
+      _airJumpCameraT = max(0, _airJumpCameraT - dt);
+    }
+
+    // Câmera persegue o jogador. Normalmente ela privilegia a descida, mas
+    // mantém uma faixa segura em cima e embaixo. Isso permite voltar para um
+    // andar superior com o segundo pulo sem o personagem sair da tela.
     final target = py - 300;
-    if (target > camY) {
+    if (target > camY || _airJumpCameraT > 0) {
       camY += (target - camY) * min(1, dt * 12);
     }
-    if (py - camY > 430) camY = py - 430;
+
+    final feetScreenY = py - camY + playerOrbitR * tilt;
+    if (feetScreenY < cameraTopSafeFeetY) {
+      camY = py + playerOrbitR * tilt - cameraTopSafeFeetY;
+    } else if (feetScreenY > cameraBottomSafeFeetY) {
+      camY = py + playerOrbitR * tilt - cameraBottomSafeFeetY;
+    }
   }
 
   void _resolveShellHits(Floor floor) {
@@ -499,6 +585,7 @@ class SuperHelixGame extends FlameGame with KeyboardEvents {
     spinDive = false;
     spinAngle = 0;
     _airJumpUsed = false;
+    _airJumpCameraT = 0;
     _lastPlayTapT = -10;
     renderer.spawnDust(floor.y);
     GameAudio.play(GameAudio.jump, volume: 0.6);

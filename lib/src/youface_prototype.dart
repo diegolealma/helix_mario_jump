@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_mesh_detection/google_mlkit_face_mesh_detection.dart';
 
+import 'face_capture.dart';
 import 'web_camera_probe.dart';
 
 class YouFacePrototypeScreen extends StatefulWidget {
@@ -79,6 +80,10 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
   Rect? _smoothedFaceCrop;
   int _faceCount = 0;
 
+  // Captura facial no web (MediaPipe via ponte JS).
+  WebFaceCapture? _webCapture;
+  Timer? _webPollTimer;
+
   bool get _hasFreshFace {
     final last = _lastFaceSeen;
     if (last == null) return false;
@@ -103,7 +108,7 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
     Object? lastUnexpectedError;
     try {
       if (kIsWeb) {
-        await _initRawWebCameraProbe();
+        await _initWebFaceCapture();
         return;
       }
 
@@ -189,6 +194,71 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
     }
   }
 
+  Future<void> _initWebFaceCapture() async {
+    final capture = WebFaceCapture();
+    if (!capture.isSupported) {
+      // A ponte JS não carregou (CDN bloqueado?). Cai no teste simples só para
+      // diferenciar "sem câmera" de "sem detector".
+      await _initRawWebCameraProbe();
+      return;
+    }
+    _webCapture = capture;
+    await capture.start();
+    if (!mounted) return;
+
+    _webPollTimer = Timer.periodic(
+      const Duration(milliseconds: 66),
+      (_) => _pollWebFace(),
+    );
+
+    setState(() {
+      _cameraReady = capture.status == 'live';
+      _cameraError = capture.status == 'error' ? capture.errorMessage : null;
+    });
+  }
+
+  Future<void> _pollWebFace() async {
+    final capture = _webCapture;
+    if (capture == null) return;
+
+    final status = capture.status;
+    final error = capture.errorMessage;
+    final hasFace = capture.hasFace;
+
+    ui.Image? next;
+    try {
+      next = await capture.takeFrameIfNew();
+    } catch (_) {
+      next = null;
+    }
+    if (!mounted) {
+      next?.dispose();
+      return;
+    }
+
+    setState(() {
+      _cameraReady = status == 'live';
+      _cameraError = status == 'error' ? error : null;
+      if (hasFace) {
+        _lastFaceSeen = DateTime.now();
+        _faceCount = 1;
+        if (next != null) {
+          final old = _faceFrame;
+          _faceFrame = FaceTextureFrame(image: next);
+          old?.dispose();
+        }
+      } else {
+        next?.dispose();
+        _faceCount = 0;
+        if (!_hasFreshFace) {
+          final old = _faceFrame;
+          _faceFrame = null;
+          old?.dispose();
+        }
+      }
+    });
+  }
+
   Future<void> _initRawWebCameraProbe() async {
     final directError = await probeRawWebCameraAccess();
     if (!mounted) return;
@@ -234,6 +304,9 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
   bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   bool get _supportsNativeFaceMesh => _isAndroid || _isIOS;
+
+  bool get _faceMeshAvailable =>
+      _supportsNativeFaceMesh || (_webCapture?.isSupported ?? false);
 
   String _friendlyCameraError(CameraException error) {
     if (error.code == 'cameraNotReadable') {
@@ -696,6 +769,8 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
 
   @override
   void dispose() {
+    _webPollTimer?.cancel();
+    _webCapture?.stop();
     final controller = _cameraController;
     if (controller != null && controller.value.isStreamingImages) {
       unawaited(controller.stopImageStream());
@@ -707,18 +782,39 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
     super.dispose();
   }
 
+  /// Toque na tela: no web, um gesto do usuário é a forma mais confiável de
+  /// (re)abrir a câmera — então usamos o toque para tentar reativar quando ela
+  /// não está ao vivo (ex.: estava ocupada por outro app e foi liberada).
+  void _onScreenTap() {
+    if (!kIsWeb) return;
+    final capture = _webCapture;
+    if (capture != null && capture.status != 'live') {
+      unawaited(capture.start());
+    }
+  }
+
+  String get _hintText {
+    if (kIsWeb && _webCapture != null && _webCapture!.status != 'live') {
+      return 'TOQUE NA TELA PARA ATIVAR A CÂMERA';
+    }
+    return 'SAIA DA CÂMERA PARA VER O CHUVISCO';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF6FC4FF),
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _clock,
-          builder: (context, _) {
-            final jump = sin(_clock.value * pi);
-            return Stack(
-              children: [
-                const Positioned.fill(child: _NeutralBackdrop()),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _onScreenTap,
+        child: SafeArea(
+          child: AnimatedBuilder(
+            animation: _clock,
+            builder: (context, _) {
+              final jump = sin(_clock.value * pi);
+              return Stack(
+                children: [
+                  const Positioned.fill(child: _NeutralBackdrop()),
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
@@ -743,27 +839,28 @@ class _YouFacePrototypeScreenState extends State<YouFacePrototypeScreen>
                     cameraReady: _cameraReady,
                     hasFace: _hasFreshFace,
                     faceCount: _faceCount,
-                    faceMeshAvailable: _supportsNativeFaceMesh,
+                    faceMeshAvailable: _faceMeshAvailable,
                     error: _cameraError,
                   ),
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 12,
-                  child: Text(
-                    'TOQUE NA TELA PARA TESTAR O PULO • SAIA DA CÂMERA PARA VER O CHUVISCO',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      fontSize: 10,
-                      fontFamily: 'PressStart2P',
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12,
+                    child: Text(
+                      _hintText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        fontSize: 10,
+                        fontFamily: 'PressStart2P',
+                      ),
                     ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

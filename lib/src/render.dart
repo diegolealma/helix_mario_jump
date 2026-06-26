@@ -5,6 +5,7 @@ import 'package:flame/components.dart' show Vector2;
 import 'package:flutter/painting.dart';
 
 import 'game.dart';
+import 'mascot.dart';
 import 'model.dart';
 import 'palette.dart';
 import 'sprites.dart';
@@ -65,6 +66,12 @@ class Renderer {
           _drawGameOver(c);
         default:
           break;
+      }
+
+      // Dica de câmera (web): some assim que o rosto entra ao vivo.
+      final hint = g.cameraHint;
+      if (hint != null && (g.time * 1.5).floor().isEven) {
+        _text(c, hint, _cx, designH - 28, 10, Pal.hudYellow, align: 'center');
       }
     }
     c.restore();
@@ -429,42 +436,39 @@ class Renderer {
     if (g.invulnT > 0 && (g.time * 12).floor().isEven) return;
 
     final falling = g.vy > 0;
-    final img = falling || g.state == GState.dying
-        ? g.sprites.playerFall
-        : g.sprites.playerJump;
-    final h = g.superForm ? 62.0 : 46.0;
+    final h = g.superForm ? 104.0 : 80.0;
 
-    // Aura de fogo no modo fever / brilho da estrela.
+    // Aura de fogo no modo fever / brilho da estrela (atrás do personagem).
     if (g.state == GState.playing) {
       if (g.starT > 0) {
         final hue = (g.time * 300) % 360;
         _paint
           ..style = PaintingStyle.fill
           ..color = HSVColor.fromAHSV(0.45, hue, 0.9, 1).toColor();
-        c.drawCircle(Offset(px, pyScreen - h / 2), h * 0.85, _paint);
+        c.drawCircle(Offset(px, pyScreen - h * 0.45), h * 0.62, _paint);
       } else if (g.firePower) {
         _paint
           ..style = PaintingStyle.fill
           ..color = Pal.lavaLight
               .withValues(alpha: 0.18 + 0.08 * sin(g.time * 8).abs());
-        c.drawCircle(Offset(px, pyScreen - h / 2), h * 0.72, _paint);
+        c.drawCircle(Offset(px, pyScreen - h * 0.45), h * 0.55, _paint);
       } else if (g.fever && falling) {
         final flick = 0.85 + 0.15 * sin(g.time * 30);
         _paint
           ..style = PaintingStyle.fill
-          ..color = Pal.lava.withValues(alpha: 0.55);
+          ..color = Pal.lava.withValues(alpha: 0.5);
+        c.drawOval(
+            Rect.fromCenter(
+                center: Offset(px, pyScreen - h * 0.4),
+                width: h * 0.8 * flick,
+                height: h * 1.25 * flick),
+            _paint);
+        _paint.color = Pal.hudYellow.withValues(alpha: 0.7);
         c.drawOval(
             Rect.fromCenter(
                 center: Offset(px, pyScreen - h * 0.35),
-                width: h * 0.95 * flick,
-                height: h * 1.5 * flick),
-            _paint);
-        _paint.color = Pal.hudYellow.withValues(alpha: 0.75);
-        c.drawOval(
-            Rect.fromCenter(
-                center: Offset(px, pyScreen - h * 0.3),
-                width: h * 0.55 * flick,
-                height: h * 0.95 * flick),
+                width: h * 0.45 * flick,
+                height: h * 0.8 * flick),
             _paint);
       }
     }
@@ -473,56 +477,45 @@ class Renderer {
     var sx = 1.0, sy = 1.0;
     final sinceBounce = g.time - g.lastBounceT;
     if (sinceBounce < 0.09) {
-      sx = 1.22;
-      sy = 0.74;
+      sx = 1.16;
+      sy = 0.82;
     } else if (g.vy > 700) {
-      sx = 0.92;
-      sy = 1.1;
+      sx = 0.94;
+      sy = 1.08;
     }
 
+    // Rotação: mergulho giratório enquanto joga, giro ao morrer.
+    var rotation = 0.0;
     if (g.state == GState.dying) {
-      // Animação clássica de morte: gira caindo.
-      c.save();
-      c.translate(px, pyScreen - h / 2);
-      c.rotate(g.stateT * 6);
-      drawSprite(c, img, Offset(0, h / 2), h);
-      c.restore();
-      return;
+      rotation = g.stateT * 6;
+    } else if (g.spinDive && g.state == GState.playing) {
+      rotation = g.spinAngle;
     }
 
-    void drawCurrent({Paint? paint}) {
-      if (g.spinDive && g.state == GState.playing) {
-        c.save();
-        c.translate(px, pyScreen - h / 2);
-        c.rotate(g.spinAngle);
-        drawSprite(c, img, Offset(0, h / 2), h,
-            scaleX: sx, scaleY: sy, paint: paint);
-        c.restore();
-      } else {
-        drawSprite(c, img, Offset(px, pyScreen), h,
-            scaleX: sx, scaleY: sy, paint: paint);
+    // Tinta da estrela (arco-íris) ou do poder de fogo, no personagem inteiro.
+    ColorFilter? tint;
+    if (g.state == GState.playing) {
+      if (g.starT > 0) {
+        final hue = (g.time * 540) % 360;
+        tint = ColorFilter.mode(
+            HSVColor.fromAHSV(0.5, hue, 1, 1).toColor(), BlendMode.srcATop);
+      } else if (g.firePower) {
+        tint = ColorFilter.mode(
+            Pal.lavaLight.withValues(alpha: 0.28), BlendMode.srcATop);
       }
     }
 
-    drawCurrent();
-
-    if (g.firePower && g.starT <= 0 && g.state == GState.playing) {
-      final fireTint = Paint()
-        ..filterQuality = FilterQuality.none
-        ..colorFilter = ColorFilter.mode(
-            Pal.lavaLight.withValues(alpha: 0.28), BlendMode.srcATop);
-      drawCurrent(paint: fireTint);
-    }
-
-    // Tinta cintilante da estrela por cima do sprite.
-    if (g.starT > 0 && g.state == GState.playing) {
-      final hue = (g.time * 540) % 360;
-      final tint = Paint()
-        ..filterQuality = FilterQuality.none
-        ..colorFilter = ColorFilter.mode(
-            HSVColor.fromAHSV(0.5, hue, 1, 1).toColor(), BlendMode.srcATop);
-      drawCurrent(paint: tint);
-    }
+    drawFaceGuy(
+      c,
+      feet: Offset(px, pyScreen),
+      height: h,
+      face: g.faceImage,
+      squashX: sx,
+      squashY: sy,
+      rotation: rotation,
+      tick: g.time,
+      tint: tint,
+    );
   }
 
   void _drawShadow(Canvas c) {
